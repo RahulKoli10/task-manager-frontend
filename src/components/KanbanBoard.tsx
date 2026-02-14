@@ -3,6 +3,7 @@
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import axios from "@/lib/axios";
 import { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 
 interface Task {
   _id: string;
@@ -33,19 +34,40 @@ interface Props {
 const columnKeys = ["todo", "in-progress", "done"];
 
 export default function KanbanBoard({ columns, fetchColumn }: Props) {
+  const { user } = useAuth();
   const [searchTimeout, setSearchTimeout] = useState<any>(null);
+
+  /* ================= DRAG ================= */
 
   const handleDragEnd = async (result: any) => {
     if (!result.destination) return;
 
     const { draggableId, destination, source } = result;
 
-    await axios.put(`/tasks/${draggableId}`, {
-      status: destination.droppableId,
-    });
+    try {
+      await axios.put(`/tasks/${draggableId}`, {
+        status: destination.droppableId,
+      });
 
-    fetchColumn(source.droppableId);
-    fetchColumn(destination.droppableId);
+      // Refresh both columns properly
+      fetchColumn(source.droppableId, 1);
+      fetchColumn(destination.droppableId, 1);
+    } catch (error) {
+      console.error("Drag failed", error);
+    }
+  };
+
+  /* ================= DELETE ================= */
+
+  const handleDelete = async (taskId: string, status: string) => {
+    try {
+      await axios.delete(`/tasks/${taskId}`);
+
+      // Refresh that specific column
+      fetchColumn(status, 1);
+    } catch (error) {
+      console.error("Delete failed", error);
+    }
   };
 
   return (
@@ -62,7 +84,7 @@ export default function KanbanBoard({ columns, fetchColumn }: Props) {
                   {...provided.droppableProps}
                   className="bg-white rounded-3xl shadow-lg p-6 flex flex-col min-h-[550px]"
                 >
-                  {/* Header */}
+                  {/* HEADER */}
                   <div className="mb-5">
                     <div className="flex justify-between items-center mb-3">
                       <h2 className="font-bold text-lg capitalize text-slate-700">
@@ -84,7 +106,7 @@ export default function KanbanBoard({ columns, fetchColumn }: Props) {
                       </select>
                     </div>
 
-                    {/* Search */}
+                    {/* SEARCH */}
                     <input
                       placeholder="Search tasks..."
                       defaultValue={col.search}
@@ -92,7 +114,12 @@ export default function KanbanBoard({ columns, fetchColumn }: Props) {
                         if (searchTimeout) clearTimeout(searchTimeout);
 
                         const timeout = setTimeout(() => {
-                          fetchColumn(column, 1, col.sort, e.target.value);
+                          fetchColumn(
+                            column,
+                            1,
+                            col.sort,
+                            e.target.value
+                          );
                         }, 400);
 
                         setSearchTimeout(timeout);
@@ -101,7 +128,7 @@ export default function KanbanBoard({ columns, fetchColumn }: Props) {
                     />
                   </div>
 
-                  {/* Tasks */}
+                  {/* TASKS */}
                   <div className="flex-1">
                     {col.tasks.length === 0 && (
                       <div className="text-gray-400 text-sm text-center mt-10">
@@ -125,9 +152,25 @@ export default function KanbanBoard({ columns, fetchColumn }: Props) {
                             <h3 className="font-semibold text-slate-800">
                               {task.title}
                             </h3>
+
                             <p className="text-sm text-slate-500 mt-1">
                               {task.description}
                             </p>
+
+                            {/* DELETE BUTTON (ADMIN + MANAGER ONLY) */}
+                            {(user?.role === "admin" ||
+                              user?.role === "manager") && (
+                              <div className="flex justify-end mt-3">
+                                <button
+                                  onClick={() =>
+                                    handleDelete(task._id, column)
+                                  }
+                                  className="text-xs text-red-500 hover:text-red-600 font-medium"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </Draggable>
@@ -136,12 +179,17 @@ export default function KanbanBoard({ columns, fetchColumn }: Props) {
 
                   {provided.placeholder}
 
-                  {/* Pagination */}
+                  {/* PAGINATION */}
                   <div className="flex justify-between items-center mt-4 text-sm pt-4 border-t">
                     <button
                       disabled={col.page === 1}
                       onClick={() =>
-                        fetchColumn(column, col.page - 1, col.sort, col.search)
+                        fetchColumn(
+                          column,
+                          col.page - 1,
+                          col.sort,
+                          col.search
+                        )
                       }
                       className="px-4 py-1 rounded-lg bg-gray-100 disabled:opacity-40"
                     >
@@ -155,14 +203,18 @@ export default function KanbanBoard({ columns, fetchColumn }: Props) {
                     <button
                       disabled={col.page === col.totalPages}
                       onClick={() =>
-                        fetchColumn(column, col.page + 1, col.sort, col.search)
+                        fetchColumn(
+                          column,
+                          col.page + 1,
+                          col.sort,
+                          col.search
+                        )
                       }
                       className="px-4 py-1 rounded-lg bg-gray-100 disabled:opacity-40"
                     >
                       Next
                     </button>
                   </div>
-
                 </div>
               )}
             </Droppable>
